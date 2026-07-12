@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+# Terraform (local state must never be committed)
+workspace/**/.terraform/
+workspace/**/*.tfstate
+workspace/**/*.tfstate.*
+workspace/**/*.tfplan
+workspace/**/plan.json
+workspace/**/.terraform.lock.hcl
+workspace/**/.agent-memory/
+agent-file-memory/
