@@ -9,8 +9,28 @@ from .runner import TerraformRunner
 from .tools.plan_summary import summarize_last_plan
 from .tools.terraform import build_terraform_tools
 
+# repo_root/src/tfagent/agent.py -> parents[2] is the repo root, where
+# conventions/ lives alongside workspace/. Anchored to this file's location
+# (not settings.workspace.parent) so conventions still load correctly if
+# TFAGENT_WORKSPACE points somewhere else entirely.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
-def build_agent(settings: Settings):
+
+def _load_conventions(workspace: Path) -> str:
+    """Read conventions/conventions.md, trying the repo root first and
+    falling back to a directory adjacent to the workspace (the previous,
+    workspace-relative convention) for non-standard layouts."""
+    for candidate in (_REPO_ROOT / "conventions" / "conventions.md", workspace.parent / "conventions" / "conventions.md"):
+        if candidate.exists():
+            return candidate.read_text(encoding="utf-8")
+    return ""
+
+
+def build_agent(settings: Settings) -> tuple:
+    """Build the harness agent and return it together with the Terraform
+    runner it was wired with, so callers (the console, tests) can build
+    Terraform-aware observers/commands (plan summaries, approval cards) off
+    the same runner instance instead of re-deriving it."""
     # --- Terraform tools (share one runner rooted at the workspace) ---
     runner = TerraformRunner(
         workspace=settings.workspace,
@@ -29,8 +49,7 @@ def build_agent(settings: Settings):
 
     tools = [*tf_tools, summarize_plan]
 
-    conventions_path = Path(settings.workspace).parent / "conventions" / "conventions.md"
-    conventions = conventions_path.read_text(encoding="utf-8") if conventions_path.exists() else ""
+    conventions = _load_conventions(settings.workspace)
     agent_instructions = SYSTEM_INSTRUCTIONS
     if conventions:
         agent_instructions += "\n\n## Organization conventions\n\n" + conventions
@@ -63,4 +82,4 @@ def build_agent(settings: Settings):
         loop_next_message=todos_remaining_message,
         loop_max_iterations=settings.max_iterations,
     )
-    return agent
+    return agent, runner

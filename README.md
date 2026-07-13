@@ -13,8 +13,12 @@ GitHub Models, and Microsoft's official Textual harness console.
 - `terraform fmt`, `init`, `validate`, and saved `plan`
 - Human approval before every `terraform apply`
 - Automatic todo-driven execution with a bounded iteration count
-- Deterministic rejection of destructive commands, bypass flags, and any saved
-  plan containing deletion or replacement actions
+- Deterministic rejection of destructive commands, bypass flags, HCL-level
+  equivalents (provisioners, `data "external"`, `import`/`removed` blocks,
+  remote backends), and any saved plan containing deletion, replacement, or
+  state-removal actions
+- Approval card that shows the actual plan diff, and a `/plan` command to
+  check it independent of the model
 - Headless TUI, harness construction, plan parsing, and safety tests
 
 ## Versions
@@ -62,10 +66,14 @@ different tool-capable model available to your account.
 3. Review the generated todos and use `/mode execute` when ready.
 4. The agent writes HCL and runs `fmt`, `init`, `validate`, and `plan`.
 5. It summarizes the saved plan.
-6. The Microsoft console displays an approval prompt for `tf_apply`.
-7. Approval applies the exact saved plan. Rejection returns control to you.
+6. The console displays an approval prompt for `tf_apply`, showing the saved
+   plan's diff directly (computed from `plan.tfplan`, not the model's
+   paraphrase) — no "always approve" option is offered for this tool.
+7. Approval applies the exact saved plan. Rejection returns control to you;
+   the agent will ask what to change rather than re-requesting approval.
 
-Useful console commands include `/mode`, `/todos`, `/session-export`,
+Useful console commands include `/mode`, `/todos`, `/plan` (show the saved
+plan's diff on demand, without asking the model), `/session-export`,
 `/session-import`, and `/exit`.
 
 ## Safety boundaries
@@ -74,9 +82,19 @@ Useful console commands include `/mode`, `/todos`, `/session-export`,
 - Terraform is invoked with argument arrays, never `shell=True`.
 - `destroy`, `state`, `import`, `taint`, `force-unlock`, `-target`, `-replace`,
   `-destroy`, and `-auto-approve` are blocked in code.
-- Before apply, `terraform show -json plan.tfplan` is checked and any plan with
-  a delete action is rejected. Replacements are therefore rejected too.
-- `tf_apply` is registered with MAF's `always_require` approval mode.
+- A deterministic HCL guard runs before `init`/`plan`/`apply` and rejects
+  `provisioner "local-exec"` / `"remote-exec"`, `data "external"`, config-driven
+  `import {}` / `removed {}` blocks, and any non-`local` `backend` block —
+  the HCL-level equivalents of the CLI operations above.
+- Before apply, `terraform show -json plan.tfplan` is checked and any plan
+  with a delete, replace, or forget (state-removal) action is rejected.
+- `tf_apply` only applies the exact `plan.tfplan` produced by `tf_plan` in the
+  current session (checked by content hash) — a stale or leftover plan file
+  on disk is refused, and the file is deleted after a successful apply.
+- The `tf_apply` approval card shows the plan diff itself, computed straight
+  from disk; approving is never based solely on the model's own summary.
+- `tf_apply` is registered with MAF's `always_require` approval mode, with no
+  "always approve" bypass offered in the console.
 - File access is rooted at `workspace/`.
 - State is local and excluded from version control.
 - The autonomous execute loop is capped by `TFAGENT_MAX_ITERATIONS`.

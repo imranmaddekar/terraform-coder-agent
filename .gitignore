@@ -9,6 +9,5 @@ workspace/**/*.tfstate
 workspace/**/*.tfstate.*
 workspace/**/*.tfplan
 workspace/**/plan.json
-workspace/**/.terraform.lock.hcl
 workspace/**/.agent-memory/
 agent-file-memory/

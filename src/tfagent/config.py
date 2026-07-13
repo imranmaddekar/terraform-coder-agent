@@ -31,6 +31,20 @@ class Settings:
             github_model=os.getenv("GITHUB_MODEL", "openai/gpt-4.1"),
             github_endpoint=os.getenv("GITHUB_MODELS_ENDPOINT", "https://models.github.ai/inference"),
             workspace=workspace,
-            max_iterations=int(os.getenv("TFAGENT_MAX_ITERATIONS", "8")),
-            tf_timeout_seconds=int(os.getenv("TFAGENT_TF_TIMEOUT_SECONDS", "600")),
+            # The canonical workflow (instructions.py) is fmt/init/validate/plan/
+            # apply per todo, plus a re-plan/re-apply cycle on any validate or
+            # apply failure. 8 was too tight for a multi-todo task with even one
+            # retry; 20 gives that room while still bounding runaway loops.
+            max_iterations=_env_int("TFAGENT_MAX_ITERATIONS", 20),
+            tf_timeout_seconds=_env_int("TFAGENT_TF_TIMEOUT_SECONDS", 600),
         )
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(f"Environment variable {name}={raw!r} is not a valid integer.") from None

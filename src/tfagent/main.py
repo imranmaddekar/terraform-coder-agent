@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import shutil
 import sys
 
 from rich.console import Console
 
 from .agent import build_agent
+from .commands import build_tfagent_command_handlers
 from .config import Settings
+from .observers import build_tfagent_observers
 
 console = Console()
 
@@ -26,11 +29,19 @@ WELCOME = (
     "run fmt/init/validate/plan, show you the diff, and ask before every apply.\n"
 )
 
+# Azure service-principal credentials the azurerm provider needs. Presence
+# alone doesn't guarantee they're *valid*, but their absence is the more
+# common failure: a dev with a working GitHub token sails through plan-mode
+# conversation, file writes, fmt, init, and validate, and only hits an Azure
+# auth error at tf_plan — many minutes into a session. Catch it up front.
+_ARM_ENV_VARS = ("ARM_SUBSCRIPTION_ID", "ARM_TENANT_ID", "ARM_CLIENT_ID", "ARM_CLIENT_SECRET")
+
 
 def _preflight(settings: Settings) -> None:
     missing = [
         k for k, v in {
             "GITHUB_TOKEN": settings.github_token,
+            **{name: os.getenv(name, "") for name in _ARM_ENV_VARS},
         }.items() if not v
     ]
     if missing:
@@ -46,6 +57,7 @@ def _print_check(settings: Settings) -> int:
         "GitHub token": bool(settings.github_token),
         "Terraform CLI": shutil.which("terraform") is not None,
         "Workspace": settings.workspace.is_dir(),
+        **{f"Azure env ({name})": bool(os.getenv(name)) for name in _ARM_ENV_VARS},
     }
     console.print(f"MAF model: [bold]{settings.github_model}[/bold]")
     console.print(f"Endpoint: {settings.github_endpoint}")
@@ -58,14 +70,15 @@ async def _run() -> None:
     settings = Settings.load()
     _preflight(settings)
     console.print(WELCOME)
-    agent = build_agent(settings)
+    agent, runner = build_agent(settings)
 
-    from .console import build_observers_with_planning, run_agent_async
+    from .console import run_agent_async
 
     await run_agent_async(
         agent,
         session=agent.create_session(),
-        observers=build_observers_with_planning(agent),
+        observers=build_tfagent_observers(agent, runner),
+        command_handlers=build_tfagent_command_handlers(agent, runner),
         initial_mode="plan",
         title="Terraform Coder Agent",
         placeholder="Describe the Azure infrastructure you want to build...",

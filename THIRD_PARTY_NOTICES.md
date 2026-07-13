@@ -7,3 +7,7 @@ Framework Python harness console sample at commit
 Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 
 Source: https://github.com/microsoft/agent-framework/tree/main/python/samples/02-agents/harness/console
+
+The vendored tool-call display observer includes a local compatibility patch
+for OpenAI-compatible Chat Completions streams, whose argument deltas omit the
+call id and function name after the initial header delta.

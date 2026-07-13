@@ -15,7 +15,12 @@ The agent loads this as durable memory and should follow it. Edit to taste.
 
 ## Provider / region
 - Default region: `swedencentral` (change this convention to suit your sandbox)
-- Pin the azurerm provider to a `~>` minor version; do not float wide.
+- Pin the azurerm provider to a `~>` major version (currently `~> 4.0`); do not
+  float wide, and do not pin an old major (`~> 3.x` is end-of-support).
+- Set `required_version` on the `terraform` block (currently `>= 1.7`) so the
+  CLI version is reproducible alongside the provider version.
+- Every variable defined in `variables.tf` must be referenced somewhere in the
+  configuration; do not hardcode a value that duplicates an unused variable.
 
 ## Safety
 - Local state only for this project; do not add a remote backend without asking.

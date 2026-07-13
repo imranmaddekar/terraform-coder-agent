@@ -29,3 +29,27 @@ def test_plan_summary_counts_changes_and_replacements() -> None:
 def test_destructive_saved_plan_is_blocked_before_apply() -> None:
     with pytest.raises(TerraformError, match="Apply blocked"):
         assert_plan_is_non_destructive(FakeRunner())  # type: ignore[arg-type]
+
+
+class ForgetRunner:
+    def run(self, *args: str) -> TfResult:
+        plan = {
+            "resource_changes": [
+                {"address": "azurerm_resource_group.demo", "change": {"actions": ["create"]}},
+                {"address": "azurerm_storage_account.orphaned", "change": {"actions": ["forget"]}},
+            ]
+        }
+        return TfResult("terraform show", 0, json.dumps(plan), "")
+
+
+def test_forget_action_is_treated_as_destructive() -> None:
+    """A `removed {}` block drops a resource from state without a "delete"
+    action — it must still be blocked, or the delete-guard is bypassable."""
+    with pytest.raises(TerraformError, match="Apply blocked"):
+        assert_plan_is_non_destructive(ForgetRunner())  # type: ignore[arg-type]
+
+
+def test_forget_action_appears_in_the_summary() -> None:
+    summary = summarize_last_plan(ForgetRunner())  # type: ignore[arg-type]
+    assert "1 to forget" in summary
+    assert "azurerm_storage_account.orphaned" in summary

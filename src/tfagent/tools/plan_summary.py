@@ -22,17 +22,24 @@ def _load_plan(runner: TerraformRunner) -> dict:
 
 
 def assert_plan_is_non_destructive(runner: TerraformRunner) -> None:
-    """Hard-stop applies containing deletes, including replacements."""
+    """Hard-stop applies containing deletes, replacements, or state removal.
+
+    "forget" is the action Terraform 1.7+ assigns to a `removed { ... }` block
+    with no `destroy` provisioner: the resource is dropped from state (and
+    thus from management) without a corresponding `delete` action, so it must
+    be checked for explicitly rather than piggybacking on the "delete" check.
+    """
     data = _load_plan(runner)
     destructive = [
         change.get("address", "?")
         for change in data.get("resource_changes", [])
-        if "delete" in change.get("change", {}).get("actions", [])
+        if {"delete", "forget"} & set(change.get("change", {}).get("actions", []))
     ]
     if destructive:
         resources = ", ".join(destructive)
         raise TerraformError(
-            "Apply blocked: the saved plan contains destroy or replacement actions for: " + resources
+            "Apply blocked: the saved plan contains destroy, replacement, or "
+            "state-removal (forget) actions for: " + resources
         )
 
 
@@ -44,6 +51,8 @@ def _classify(actions: list[str]) -> str:
         return "add"
     if a == {"delete"}:
         return "destroy"
+    if a == {"forget"}:
+        return "forget"
     if "delete" in a and "create" in a:
         return "replace"
     if a == {"update"}:
@@ -59,7 +68,7 @@ def summarize_last_plan(runner: TerraformRunner) -> str:
         return str(exc)
 
     changes = data.get("resource_changes", [])
-    tally = {"add": 0, "change": 0, "destroy": 0, "replace": 0}
+    tally = {"add": 0, "change": 0, "destroy": 0, "replace": 0, "forget": 0}
     lines: list[str] = []
     for ch in changes:
         kind = _classify(ch.get("change", {}).get("actions", []))
@@ -81,5 +90,6 @@ def summarize_last_plan(runner: TerraformRunner) -> str:
         f"Plan: {tally['add']} to add, {tally['change']} to change, "
         f"{tally['destroy']} to destroy"
         + (f" (includes {tally['replace']} replacement(s))" if tally["replace"] else "")
+        + (f", {tally['forget']} to forget (remove from state)" if tally["forget"] else "")
     )
     return header + "\n" + "\n".join(lines)

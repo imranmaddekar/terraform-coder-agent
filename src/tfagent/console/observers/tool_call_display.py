@@ -47,6 +47,10 @@ class ToolCallDisplayObserver(ConsoleObserver):
         self._pending: dict[str, dict[str, Any]] = {}
         # call_ids already displayed in the current stream (avoid duplicates).
         self._displayed: set[str] = set()
+        # Chat Completions sends the call id/name only on the first delta and
+        # leaves both blank on subsequent argument deltas. Remember that call.
+        self._active_call_id: str | None = None
+        self._anonymous_call_count = 0
 
     async def on_content(
         self,
@@ -66,14 +70,24 @@ class ToolCallDisplayObserver(ConsoleObserver):
         if content.type != "function_call":
             return
 
-        # Streamed fragments are coalesced by call_id. If a provider omits the
-        # call_id, fragments cannot be reliably grouped, so fall back to the
-        # original behavior — display the item as-is — rather than risk merging
-        # (and then dropping) distinct calls under a shared synthetic key.
         call_id = content.call_id
         if not call_id:
-            self._display(ux, content)
-            return
+            # OpenAI-compatible Chat Completions emits a header delta carrying
+            # id/name, followed by argument deltas where both are empty. Attach
+            # those fragments to the most recently opened call.
+            if self._active_call_id in self._pending:
+                call_id = self._active_call_id
+            elif len(self._pending) == 1:
+                call_id = next(iter(self._pending))
+            elif content.name:
+                self._anonymous_call_count += 1
+                call_id = f"anonymous-{self._anonymous_call_count}"
+            else:
+                # An unidentifiable orphan delta is not useful to the user. Do
+                # not render a misleading "Unknown" line for every fragment.
+                return
+        else:
+            self._active_call_id = call_id
 
         if call_id in self._displayed:
             return
@@ -113,6 +127,7 @@ class ToolCallDisplayObserver(ConsoleObserver):
             self._flush(ux, call_id)
         self._pending.clear()
         self._displayed.clear()
+        self._active_call_id = None
         return None
 
     @staticmethod
@@ -148,6 +163,8 @@ class ToolCallDisplayObserver(ConsoleObserver):
         if entry is None or call_id in self._displayed:
             return
         self._displayed.add(call_id)
+        if self._active_call_id == call_id:
+            self._active_call_id = None
 
         from agent_framework import Content
 
@@ -168,4 +185,3 @@ class ToolCallDisplayObserver(ConsoleObserver):
         """Format and write a single tool-call line."""
         formatted = format_tool_call(self._formatters, call)
         ux.append_info_line(f"🔧 {formatted}", "yellow")
-
