@@ -11,3 +11,5 @@ workspace/**/*.tfplan
 workspace/**/plan.json
 workspace/**/.agent-memory/
 agent-file-memory/
+# export_to_repo bundle fallback output
+export/

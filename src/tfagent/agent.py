@@ -4,8 +4,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from .config import Settings
+from .flow import FlowState, build_flow_tools
 from .instructions import SYSTEM_INSTRUCTIONS
-from .runner import TerraformRunner
+from .runner import DESTROY_PLAN_FILENAME, TerraformRunner
+from .tools.export import build_export_tool
 from .tools.plan_summary import summarize_last_plan
 from .tools.terraform import build_terraform_tools
 
@@ -32,13 +34,19 @@ def build_agent(settings: Settings) -> tuple:
     Terraform-aware observers/commands (plan summaries, approval cards) off
     the same runner instance instead of re-deriving it."""
     # --- Terraform tools (share one runner rooted at the workspace) ---
+    # The FlowState rides on the runner so tools, commands, and observers all
+    # see the same session flow without changing this function's return shape.
+    flow_state = FlowState()
     runner = TerraformRunner(
         workspace=settings.workspace,
         timeout_seconds=settings.tf_timeout_seconds,
+        flow_state=flow_state,
     )
     tf_tools = build_terraform_tools(runner)
+    flow_tools = build_flow_tools(flow_state)
+    export_tool = build_export_tool(runner, settings.export_repo, settings.export_subdir)
 
-    # summarize_last_plan needs the runner bound; expose a zero-arg tool.
+    # summarize_last_plan needs the runner bound; expose zero-arg tools.
     from agent_framework import FileSystemAgentFileStore, create_harness_agent, todos_remaining, todos_remaining_message, tool
 
     @tool(approval_mode="never_require")
@@ -47,7 +55,13 @@ def build_agent(settings: Settings) -> tuple:
         'N to add, N to change, N to destroy' plus a per-resource list."""
         return summarize_last_plan(runner)
 
-    tools = [*tf_tools, summarize_plan]
+    @tool(approval_mode="never_require")
+    def summarize_destroy_plan() -> str:
+        """Summarize the saved destroy plan (destroy.tfplan) as a human-readable
+        diff, listing every sandbox resource the teardown would remove."""
+        return summarize_last_plan(runner, DESTROY_PLAN_FILENAME)
+
+    tools = [*tf_tools, *flow_tools, export_tool, summarize_plan, summarize_destroy_plan]
 
     conventions = _load_conventions(settings.workspace)
     agent_instructions = SYSTEM_INSTRUCTIONS

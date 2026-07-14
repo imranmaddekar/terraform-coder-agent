@@ -22,10 +22,15 @@ class Settings:
     max_iterations: int
     tf_timeout_seconds: int
 
+    # Pipeline hand-off (export_to_repo). export_repo None => bundle fallback.
+    export_repo: Path | None = None
+    export_subdir: str = "terraform"
+
     @staticmethod
     def load() -> "Settings":
         workspace = Path(os.getenv("TFAGENT_WORKSPACE", "./workspace")).resolve()
         workspace.mkdir(parents=True, exist_ok=True)
+        export_repo_raw = os.getenv("TFAGENT_EXPORT_REPO", "")
         return Settings(
             github_token=os.getenv("GITHUB_TOKEN", ""),
             github_model=os.getenv("GITHUB_MODEL", "openai/gpt-4.1"),
@@ -37,6 +42,8 @@ class Settings:
             # retry; 20 gives that room while still bounding runaway loops.
             max_iterations=_env_int("TFAGENT_MAX_ITERATIONS", 20),
             tf_timeout_seconds=_env_int("TFAGENT_TF_TIMEOUT_SECONDS", 600),
+            export_repo=Path(export_repo_raw).resolve() if export_repo_raw else None,
+            export_subdir=os.getenv("TFAGENT_EXPORT_SUBDIR", "terraform"),
         )
 
 

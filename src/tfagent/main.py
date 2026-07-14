@@ -23,7 +23,11 @@ console = Console()
 
 WELCOME = (
     "[bold]Terraform Coder Agent[/bold]\n"
-    "Real Azure subscription - LOCAL Terraform state - apply is always human-approved.\n\n"
+    "Real Azure sandbox subscription - LOCAL Terraform state - apply is always human-approved.\n"
+    "The real deployment happens via YOUR pipeline; this agent only validates.\n\n"
+    "Each session runs one of two flows (the agent will ask, or use /flow):\n"
+    "  greenfield - build new infra, sandbox-validate with apply, tear down, export\n"
+    "  brownfield - change deployed infra, plan-only: the diff is the deliverable\n\n"
     "Describe what infrastructure you want. The agent starts in PLAN mode: it will\n"
     "ask clarifying questions, propose a structure, then (in EXECUTE mode) write HCL,\n"
     "run fmt/init/validate/plan, show you the diff, and ask before every apply.\n"

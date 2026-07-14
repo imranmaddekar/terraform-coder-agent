@@ -27,9 +27,12 @@ def settings(tmp_path: Path) -> Settings:
 def test_tool_approval_modes_are_enforced(tmp_path: Path) -> None:
     with patch("tfagent.runner.shutil.which", return_value="/usr/bin/terraform"):
         runner = TerraformRunner(tmp_path)
-    _tf_fmt, _tf_validate, _tf_init, tf_plan, tf_apply = build_terraform_tools(runner)
-    assert tf_plan.approval_mode == "never_require"
-    assert tf_apply.approval_mode == "always_require"
+    tools = {t.name: t for t in build_terraform_tools(runner)}
+    assert tools["tf_plan"].approval_mode == "never_require"
+    assert tools["tf_plan_destroy"].approval_mode == "never_require"
+    assert tools["tf_state_list"].approval_mode == "never_require"
+    assert tools["tf_apply"].approval_mode == "always_require"
+    assert tools["tf_destroy_sandbox"].approval_mode == "always_require"
 
 
 def test_file_edit_instructions_match_maf_file_access_contract() -> None:
@@ -51,7 +54,9 @@ def test_harness_builds_with_github_models_and_official_console(tmp_path: Path) 
     provider_names = {type(provider).__name__ for provider in agent.context_providers}
     assert {"TodoProvider", "AgentModeProvider", "FileAccessProvider"} <= provider_names
     assert build_tfagent_observers(agent, runner)
-    assert build_tfagent_command_handlers(agent, runner)
+    handlers = build_tfagent_command_handlers(agent, runner)
+    handler_names = {type(h).__name__ for h in handlers}
+    assert {"PlanCommandHandler", "FlowCommandHandler"} <= handler_names
 
 
 @pytest.mark.asyncio
