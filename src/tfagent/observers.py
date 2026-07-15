@@ -21,6 +21,9 @@ from .console.observers import (
     UsageDisplayObserver,
     WebSearchDisplayObserver,
 )
+from .flow import SET_FLOW_TOOL_NAME
+from .runner import DESTROY_PLAN_FILENAME
+from .tools.export import EXPORT_TOOL_NAME
 from .tools.plan_summary import summarize_last_plan
 from .tools.terraform import APPROVAL_REQUIRED_TOOL_NAMES
 
@@ -35,7 +38,24 @@ if TYPE_CHECKING:
 # model's own narration of "ran validate, it passed" is not something the
 # human can independently check otherwise (see README: tool calls are shown,
 # tool *results* are not, by the vendored console).
-_WATCHED_RESULT_TOOLS = {"tf_fmt", "tf_validate", "tf_init", "tf_plan", "tf_apply", "summarize_plan"}
+_WATCHED_RESULT_TOOLS = {
+    "tf_fmt", "tf_validate", "tf_init", "tf_plan", "tf_apply",
+    "tf_plan_destroy", "tf_destroy_sandbox", "tf_state_list", "tf_state_show",
+    "summarize_plan", "summarize_destroy_plan",
+    SET_FLOW_TOOL_NAME, "get_session_flow", EXPORT_TOOL_NAME,
+}
+
+# Skill loads are silent (auto-approved, read-only) — surface them in the
+# call formatter so the human can see which know-how the agent pulled in,
+# without echoing the whole skill body as a result.
+_SKILL_TOOL_DETAILS = {
+    "load_skill": "(load a SKILL.md into context; read-only)",
+    "read_skill_resource": "(read a skill's reference file; read-only)",
+}
+
+# Tools whose approval card must never offer an "always approve" choice:
+# each call is confirmed individually, every time.
+_HUMAN_GATED_TOOL_NAMES = APPROVAL_REQUIRED_TOOL_NAMES | {SET_FLOW_TOOL_NAME, EXPORT_TOOL_NAME}
 
 _RESULT_PREVIEW_CHARS = 1200
 
@@ -48,8 +68,17 @@ class TerraformToolFormatter(ToolCallFormatter):
         "tf_validate": "(syntax + internal consistency check)",
         "tf_init": "(download providers/modules, local state)",
         "tf_plan": "(save plan.tfplan; read-only)",
-        "tf_apply": "(apply plan.tfplan -> REAL Azure)",
+        "tf_apply": "(apply plan.tfplan -> REAL Azure sandbox; greenfield only)",
+        "tf_plan_destroy": "(save destroy.tfplan for sandbox teardown; read-only)",
+        "tf_destroy_sandbox": "(apply destroy.tfplan -> tear down sandbox resources)",
+        "tf_state_list": "(list resources in local state; read-only)",
+        "tf_state_show": "(show one resource from state; read-only)",
         "summarize_plan": "(diff saved plan.tfplan)",
+        "summarize_destroy_plan": "(diff saved destroy.tfplan)",
+        "get_session_flow": "(report greenfield/brownfield)",
+        SET_FLOW_TOOL_NAME: "(set session flow; human-approved)",
+        EXPORT_TOOL_NAME: "(commit *.tf to the pipeline repo / export bundle)",
+        **_SKILL_TOOL_DETAILS,
     }
 
     def can_format(self, call: Content) -> bool:
@@ -104,13 +133,14 @@ class TerraformResultDisplayObserver(ConsoleObserver):
 
 
 class TerraformApprovalObserver(ToolApprovalObserver):
-    """Approval observer that shows the saved plan's diff on the tf_apply card
-    and never offers a blanket "always approve" for it.
+    """Approval observer that shows the saved plan's diff on the tf_apply /
+    tf_destroy_sandbox cards and never offers a blanket "always approve" for
+    any human-gated tool.
 
     The base observer's card carries only the tool name — `tf_apply` takes no
     arguments, so there is nothing else on the card, and the human's decision
     rests entirely on the model's chat-text paraphrase of the plan. This
-    subclass reads plan.tfplan directly (the same deterministic path
+    subclass reads the saved plan file directly (the same deterministic path
     `summarize_plan` uses) and puts that diff on the card itself.
     """
 
@@ -118,26 +148,37 @@ class TerraformApprovalObserver(ToolApprovalObserver):
         super().__init__()
         self._runner = runner
 
+    def _card_detail(self, call_name: str | None) -> str | None:
+        """Deterministic extra context for the card, by tool."""
+        if call_name == "tf_apply":
+            return summarize_last_plan(self._runner)
+        if call_name == "tf_destroy_sandbox":
+            return (
+                "⚠️ TEARDOWN — every resource below will be DESTROYED in the sandbox:\n"
+                + summarize_last_plan(self._runner, DESTROY_PLAN_FILENAME)
+            )
+        return None
+
     def _build_approval_question(self, request: Content):
         tool_name = self._format_tool_name(request)
         function_call = getattr(request, "function_call", None)
         call_name = getattr(function_call, "name", None)
-        is_gated_apply = call_name in APPROVAL_REQUIRED_TOOL_NAMES
+        is_human_gated = call_name in _HUMAN_GATED_TOOL_NAMES
 
         prompt = f"🔐 Tool approval: {tool_name}"
-        if is_gated_apply:
-            try:
-                plan_text = summarize_last_plan(self._runner)
-            except Exception as exc:  # noqa: BLE001 - surface failure to the human, don't hide it
-                plan_text = f"(could not read the saved plan: {exc})"
-            prompt = f"{prompt}\n{plan_text}"
+        try:
+            detail = self._card_detail(call_name)
+        except Exception as exc:  # noqa: BLE001 - surface failure to the human, don't hide it
+            detail = f"(could not read the saved plan: {exc})"
+        if detail:
+            prompt = f"{prompt}\n{detail}"
 
         approve_once = "Approve this call"
         deny = "Deny"
-        if is_gated_apply:
-            # No "always approve" choice for a human-gated apply: this tool
-            # must be confirmed every time, never blanket-approved by a
-            # misclick or muscle memory carried over from other tools.
+        if is_human_gated:
+            # No "always approve" choice for a human-gated tool: it must be
+            # confirmed every time, never blanket-approved by a misclick or
+            # muscle memory carried over from other tools.
             choices = [approve_once, deny]
         else:
             always_tool = "Always approve this tool (any arguments)"
@@ -155,13 +196,13 @@ class TerraformApprovalObserver(ToolApprovalObserver):
                 response_content = request.to_function_approval_response(approved=False)
                 action_label = "❌ Denied"
                 color = "red"
-            elif not is_gated_apply and selection == always_tool:
+            elif not is_human_gated and selection == always_tool:
                 response_content = create_always_approve_tool_response(
                     request, reason="User chose to always approve this tool"
                 )
                 action_label = "✅ Always approved (any args)"
                 color = "green"
-            elif not is_gated_apply and selection == always_tool_args:
+            elif not is_human_gated and selection == always_tool_args:
                 response_content = create_always_approve_tool_with_arguments_response(
                     request, reason="User chose to always approve this tool with these arguments"
                 )

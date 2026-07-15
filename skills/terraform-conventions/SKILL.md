@@ -1,6 +1,13 @@
+---
+name: terraform-conventions
+description: Org Terraform conventions (naming, required tags, provider/region pinning, safety). Load before writing or reviewing any HCL.
+---
+
 # Org Terraform Conventions
 
-The agent loads this as durable memory and should follow it. Edit to taste.
+Follow these conventions for every piece of HCL you write or review.
+Edit this skill to change org standards — the agent picks it up on the
+next load, no code changes needed.
 
 ## Naming
 - Resource name prefix: `demo-`
@@ -12,6 +19,13 @@ The agent loads this as durable memory and should follow it. Edit to taste.
 - `owner`
 - `managed-by = "terraform-coder-agent"`
 - `cost-center`
+
+## Sandbox teardown scope (greenfield flow)
+- Every resource the agent creates must carry `managed-by = "terraform-coder-agent"`
+  (already required above) plus `tfagent-session-scope = "sandbox"` so what the
+  teardown removes is provably only what this agent created.
+- Sandbox validation resources are disposable: never store data in them that
+  must outlive the session.
 
 ## Provider / region
 - Default region: `swedencentral` (change this convention to suit your sandbox)
@@ -25,3 +39,5 @@ The agent loads this as durable memory and should follow it. Edit to taste.
 ## Safety
 - Local state only for this project; do not add a remote backend without asking.
 - No public network exposure by default; ask before opening inbound ports.
+- The sandbox subscription is for validation only; the pipeline repo
+  (export_to_repo) is the only path to real environments.

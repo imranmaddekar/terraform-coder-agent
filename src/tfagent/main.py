@@ -23,7 +23,11 @@ console = Console()
 
 WELCOME = (
     "[bold]Terraform Coder Agent[/bold]\n"
-    "Real Azure subscription - LOCAL Terraform state - apply is always human-approved.\n\n"
+    "Real Azure sandbox subscription - LOCAL Terraform state - apply is always human-approved.\n"
+    "The real deployment happens via YOUR pipeline; this agent only validates.\n\n"
+    "Each session runs one of two flows (the agent will ask, or use /flow):\n"
+    "  greenfield - build new infra, sandbox-validate with apply, tear down, export\n"
+    "  brownfield - change deployed infra, plan-only: the diff is the deliverable\n\n"
     "Describe what infrastructure you want. The agent starts in PLAN mode: it will\n"
     "ask clarifying questions, propose a structure, then (in EXECUTE mode) write HCL,\n"
     "run fmt/init/validate/plan, show you the diff, and ask before every apply.\n"
@@ -31,7 +35,7 @@ WELCOME = (
 
 # Azure service-principal credentials the azurerm provider needs. Presence
 # alone doesn't guarantee they're *valid*, but their absence is the more
-# common failure: a dev with a working GitHub token sails through plan-mode
+# common failure: a dev with a working model API key sails through plan-mode
 # conversation, file writes, fmt, init, and validate, and only hits an Azure
 # auth error at tf_plan — many minutes into a session. Catch it up front.
 _ARM_ENV_VARS = ("ARM_SUBSCRIPTION_ID", "ARM_TENANT_ID", "ARM_CLIENT_ID", "ARM_CLIENT_SECRET")
@@ -40,7 +44,7 @@ _ARM_ENV_VARS = ("ARM_SUBSCRIPTION_ID", "ARM_TENANT_ID", "ARM_CLIENT_ID", "ARM_C
 def _preflight(settings: Settings) -> None:
     missing = [
         k for k, v in {
-            "GITHUB_TOKEN": settings.github_token,
+            **settings.required_model_env,
             **{name: os.getenv(name, "") for name in _ARM_ENV_VARS},
         }.items() if not v
     ]
@@ -54,13 +58,14 @@ def _preflight(settings: Settings) -> None:
 
 def _print_check(settings: Settings) -> int:
     checks = {
-        "GitHub token": bool(settings.github_token),
+        **{f"Model env ({name})": bool(value) for name, value in settings.required_model_env.items()},
         "Terraform CLI": shutil.which("terraform") is not None,
         "Workspace": settings.workspace.is_dir(),
         **{f"Azure env ({name})": bool(os.getenv(name)) for name in _ARM_ENV_VARS},
     }
-    console.print(f"MAF model: [bold]{settings.github_model}[/bold]")
-    console.print(f"Endpoint: {settings.github_endpoint}")
+    console.print(f"Provider: [bold]{settings.model_provider}[/bold]")
+    console.print(f"MAF model: [bold]{settings.model_label}[/bold]")
+    console.print(f"Endpoint: {settings.model_endpoint_label or '(not configured)'}")
     for label, ok in checks.items():
         console.print(f"[{'green' if ok else 'red'}]{'OK' if ok else 'MISSING'}[/] {label}")
     return 0 if all(checks.values()) else 1

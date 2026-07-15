@@ -11,8 +11,8 @@ import json
 from ..runner import TerraformError, TerraformRunner
 
 
-def _load_plan(runner: TerraformRunner) -> dict:
-    res = runner.run("show", "-json", "plan.tfplan")
+def _load_plan(runner: TerraformRunner, plan_filename: str = "plan.tfplan") -> dict:
+    res = runner.run("show", "-json", plan_filename)
     if not res.ok:
         raise TerraformError(f"Could not read saved plan: {res.stderr.strip() or 'unknown error'}")
     try:
@@ -43,6 +43,27 @@ def assert_plan_is_non_destructive(runner: TerraformRunner) -> None:
         )
 
 
+def assert_plan_is_destroy_only(runner: TerraformRunner, plan_filename: str) -> None:
+    """Hard-stop a teardown apply whose plan does anything besides delete.
+
+    The mirror image of ``assert_plan_is_non_destructive``: a greenfield
+    sandbox teardown must only remove resources, so any create/update/forget
+    action in the saved destroy plan means the file is not a pure destroy
+    plan and must not be applied through the teardown path.
+    """
+    data = _load_plan(runner, plan_filename)
+    unexpected = [
+        change.get("address", "?")
+        for change in data.get("resource_changes", [])
+        if set(change.get("change", {}).get("actions", [])) - {"delete", "no-op"}
+    ]
+    if unexpected:
+        raise TerraformError(
+            "Teardown blocked: the saved destroy plan contains non-delete "
+            "actions for: " + ", ".join(unexpected)
+        )
+
+
 def _classify(actions: list[str]) -> str:
     a = set(actions)
     if a == {"no-op"}:
@@ -60,10 +81,11 @@ def _classify(actions: list[str]) -> str:
     return "/".join(sorted(a))
 
 
-def summarize_last_plan(runner: TerraformRunner) -> str:
-    """Return a readable summary of plan.tfplan; safe to call after tf_plan."""
+def summarize_last_plan(runner: TerraformRunner, plan_filename: str = "plan.tfplan") -> str:
+    """Return a readable summary of a saved plan; safe to call after tf_plan
+    (default) or, with destroy.tfplan, after tf_plan_destroy."""
     try:
-        data = _load_plan(runner)
+        data = _load_plan(runner, plan_filename)
     except TerraformError as exc:
         return str(exc)
 
