@@ -45,6 +45,14 @@ _WATCHED_RESULT_TOOLS = {
     SET_FLOW_TOOL_NAME, "get_session_flow", EXPORT_TOOL_NAME,
 }
 
+# Skill loads are silent (auto-approved, read-only) — surface them in the
+# call formatter so the human can see which know-how the agent pulled in,
+# without echoing the whole skill body as a result.
+_SKILL_TOOL_DETAILS = {
+    "load_skill": "(load a SKILL.md into context; read-only)",
+    "read_skill_resource": "(read a skill's reference file; read-only)",
+}
+
 # Tools whose approval card must never offer an "always approve" choice:
 # each call is confirmed individually, every time.
 _HUMAN_GATED_TOOL_NAMES = APPROVAL_REQUIRED_TOOL_NAMES | {SET_FLOW_TOOL_NAME, EXPORT_TOOL_NAME}
@@ -70,6 +78,7 @@ class TerraformToolFormatter(ToolCallFormatter):
         "get_session_flow": "(report greenfield/brownfield)",
         SET_FLOW_TOOL_NAME: "(set session flow; human-approved)",
         EXPORT_TOOL_NAME: "(commit *.tf to the pipeline repo / export bundle)",
+        **_SKILL_TOOL_DETAILS,
     }
 
     def can_format(self, call: Content) -> bool:

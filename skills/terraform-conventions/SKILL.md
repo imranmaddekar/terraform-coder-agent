@@ -1,6 +1,13 @@
+---
+name: terraform-conventions
+description: Org Terraform conventions (naming, required tags, provider/region pinning, safety). Load before writing or reviewing any HCL.
+---
+
 # Org Terraform Conventions
 
-The agent loads this as durable memory and should follow it. Edit to taste.
+Follow these conventions for every piece of HCL you write or review.
+Edit this skill to change org standards — the agent picks it up on the
+next load, no code changes needed.
 
 ## Naming
 - Resource name prefix: `demo-`
@@ -13,6 +20,13 @@ The agent loads this as durable memory and should follow it. Edit to taste.
 - `managed-by = "terraform-coder-agent"`
 - `cost-center`
 
+## Sandbox teardown scope (greenfield flow)
+- Every resource the agent creates must carry `managed-by = "terraform-coder-agent"`
+  (already required above) plus `tfagent-session-scope = "sandbox"` so what the
+  teardown removes is provably only what this agent created.
+- Sandbox validation resources are disposable: never store data in them that
+  must outlive the session.
+
 ## Provider / region
 - Default region: `swedencentral` (change this convention to suit your sandbox)
 - Pin the azurerm provider to a `~>` major version (currently `~> 4.0`); do not
@@ -21,13 +35,6 @@ The agent loads this as durable memory and should follow it. Edit to taste.
   CLI version is reproducible alongside the provider version.
 - Every variable defined in `variables.tf` must be referenced somewhere in the
   configuration; do not hardcode a value that duplicates an unused variable.
-
-## Sandbox teardown scope (greenfield flow)
-- Every resource the agent creates must carry `managed-by = "terraform-coder-agent"`
-  (already required above) plus `tfagent-session-scope = "sandbox"` so what the
-  teardown removes is provably only what this agent created.
-- Sandbox validation resources are disposable: never store data in them that
-  must outlive the session.
 
 ## Safety
 - Local state only for this project; do not add a remote backend without asking.

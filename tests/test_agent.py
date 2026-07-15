@@ -52,12 +52,17 @@ def test_instructions_cover_apply_rejection_and_hcl_level_bypasses() -> None:
     assert 'data "external"' in SYSTEM_INSTRUCTIONS
 
 
+def test_instructions_point_at_the_three_skills() -> None:
+    for skill in ("terraform-conventions", "plan-review-checklist", "brownfield-drift-review"):
+        assert skill in SYSTEM_INSTRUCTIONS
+
+
 def test_harness_builds_with_azure_openai_and_official_console(tmp_path: Path) -> None:
     with patch("tfagent.runner.shutil.which", return_value="/usr/bin/terraform"):
         agent, runner = build_agent(settings(tmp_path))
     assert agent.name == "TerraformCoderAgent"
     provider_names = {type(provider).__name__ for provider in agent.context_providers}
-    assert {"TodoProvider", "AgentModeProvider", "FileAccessProvider"} <= provider_names
+    assert {"TodoProvider", "AgentModeProvider", "FileAccessProvider", "SkillsProvider"} <= provider_names
     assert build_tfagent_observers(agent, runner)
     handlers = build_tfagent_command_handlers(agent, runner)
     handler_names = {type(h).__name__ for h in handlers}

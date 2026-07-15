@@ -33,7 +33,24 @@ Claude models in Foundry), and Microsoft's official Textual harness console.
   or state-removal actions
 - Approval card that shows the actual plan diff (destroy diff for teardown),
   and a `/plan` command to check it independent of the model
+- Progressive agent skills: org conventions, a plan-review checklist, and
+  brownfield drift-review guidance live as `skills/*/SKILL.md` files the
+  agent loads on demand — edit them to change org standards, no code changes
 - Headless TUI, harness construction, plan parsing, and safety tests
+
+## Skills
+
+Domain knowledge is packaged as MAF agent skills under `skills/` rather than
+stuffed into the system prompt. The agent sees only names and descriptions up
+front and loads a skill's full content when relevant:
+
+- `terraform-conventions` — naming, required tags, provider/region pinning
+- `plan-review-checklist` — what to verify before requesting apply approval
+- `brownfield-drift-review` — how to work against already-deployed infra
+
+Skill loading is read-only and auto-approved. No script runner is configured,
+so skill scripts can never execute, and only this local, version-controlled
+folder is wired as a source (no MCP/Foundry skill sources).
 
 ## Versions
 
@@ -151,6 +168,8 @@ saved plan's diff on demand, without asking the model), `/session-export`,
 - `export_to_repo` is human-gated, copies only `*.tf` files (never state,
   saved plans, or `.env`), validates the branch name, and runs git with
   argument arrays.
+- Skills are trusted local files only; no script runner is configured, so a
+  script placed inside a skill folder can never be executed.
 - A deterministic HCL guard runs before `init`/`plan`/`apply` and rejects
   `provisioner "local-exec"` / `"remote-exec"`, `data "external"`, config-driven
   `import {}` / `removed {}` blocks, and any non-`local` `backend` block —

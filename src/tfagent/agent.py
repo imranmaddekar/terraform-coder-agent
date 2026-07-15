@@ -14,20 +14,29 @@ from .tools.plan_summary import summarize_last_plan
 from .tools.terraform import build_terraform_tools
 
 # repo_root/src/tfagent/agent.py -> parents[2] is the repo root, where
-# conventions/ lives alongside workspace/. Anchored to this file's location
-# (not settings.workspace.parent) so conventions still load correctly if
+# skills/ lives alongside workspace/. Anchored to this file's location
+# (not settings.workspace.parent) so skills still load correctly if
 # TFAGENT_WORKSPACE points somewhere else entirely.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_SKILLS_DIR = _REPO_ROOT / "skills"
 
 
-def _load_conventions(workspace: Path) -> str:
-    """Read conventions/conventions.md, trying the repo root first and
-    falling back to a directory adjacent to the workspace (the previous,
-    workspace-relative convention) for non-standard layouts."""
-    for candidate in (_REPO_ROOT / "conventions" / "conventions.md", workspace.parent / "conventions" / "conventions.md"):
-        if candidate.exists():
-            return candidate.read_text(encoding="utf-8")
-    return ""
+def _build_skills_provider():
+    """Progressive domain knowledge from skills/*/SKILL.md files.
+
+    Loading a skill (and reading its resources) is read-only, so both are
+    frictionless; deliberately NO script_runner is configured, so skill
+    scripts can never execute — consistent with this project's
+    no-arbitrary-execution safety posture even if someone drops a script
+    into a skill folder.
+    """
+    from agent_framework import SkillsProvider
+
+    return SkillsProvider.from_paths(
+        [_SKILLS_DIR],
+        disable_load_skill_approval=True,
+        disable_read_skill_resource_approval=True,
+    )
 
 
 def _build_chat_client(settings: Settings):
@@ -94,11 +103,6 @@ def build_agent(settings: Settings) -> tuple:
 
     tools = [*tf_tools, *flow_tools, export_tool, summarize_plan, summarize_destroy_plan]
 
-    conventions = _load_conventions(settings.workspace)
-    agent_instructions = SYSTEM_INSTRUCTIONS
-    if conventions:
-        agent_instructions += "\n\n## Organization conventions\n\n" + conventions
-
     client = _build_chat_client(settings)
 
     # --- Harness agent ---
@@ -108,7 +112,7 @@ def build_agent(settings: Settings) -> tuple:
         client=client,
         name="TerraformCoderAgent",
         description="A human-gated Terraform coding agent for Azure.",
-        agent_instructions=agent_instructions,
+        agent_instructions=SYSTEM_INSTRUCTIONS,
         tools=tools,
         max_context_window_tokens=128_000,
         max_output_tokens=16_384,
@@ -116,6 +120,7 @@ def build_agent(settings: Settings) -> tuple:
         file_memory_store=FileSystemAgentFileStore(settings.workspace / ".agent-memory"),
         file_access_disable_write_tool_approval=True,
         disable_web_search=True,
+        skills_provider=_build_skills_provider(),
         loop_should_continue=todos_remaining(looping_modes=["execute"]),
         loop_next_message=todos_remaining_message,
         loop_max_iterations=settings.max_iterations,
