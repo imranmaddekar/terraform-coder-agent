@@ -2,7 +2,8 @@
 
 A Claude-Code-style terminal application for authoring and safely applying
 Terraform to Azure. It uses the Microsoft Agent Framework (MAF) harness,
-GitHub Models, and Microsoft's official Textual harness console.
+Azure AI Foundry-hosted models (Azure OpenAI GPT deployments or Anthropic
+Claude models in Foundry), and Microsoft's official Textual harness console.
 
 ## What works
 
@@ -12,7 +13,9 @@ GitHub Models, and Microsoft's official Textual harness console.
   deliverable, apply/destroy disabled)
 - Plan and execute modes with a visible todo list
 - Streaming responses and tool-call output in a Textual TUI
-- GitHub Models through MAF's `OpenAIChatCompletionClient`
+- Azure AI Foundry models through MAF clients, switched by
+  `TFAGENT_MODEL_PROVIDER`: GPT deployments via `OpenAIChatCompletionClient`
+  (Azure routing) or Claude deployments via `AnthropicFoundryClient`
 - Scoped workspace file access and session file memory
 - `terraform fmt`, `init`, `validate`, and saved `plan`
 - Human approval before every `terraform apply`
@@ -40,17 +43,23 @@ recorded in `uv.lock`. At the time of the latest verification:
 - Python 3.14.6
 - `agent-framework-core` 1.11.0
 - `agent-framework-openai` 1.10.1
+- `agent-framework-anthropic` 1.0.0b260709 (prerelease-only upstream)
 - Textual 8.2.8
 - Rich 15.0.0
-- OpenAI Python 2.45.0 (transitive)
+- OpenAI Python 2.45.0 / Anthropic Python 0.116.0 (transitive)
 
 Run `uv lock --upgrade && uv sync --all-groups` to deliberately upgrade all
 packages, then run the tests.
 
 ## Prerequisites
 
-1. A GitHub account with access to GitHub Models.
-2. A fine-grained GitHub PAT with `models: read` permission.
+1. An Azure AI Foundry project (or Azure OpenAI resource) with a deployed
+   model: either a GPT deployment, or an Anthropic Claude model deployed in
+   Foundry.
+2. The deployment's endpoint and API key. Claude models use the resource's
+   `/anthropic` Messages endpoint (not the OpenAI-compatible one); note that
+   a few Claude models (e.g. Mythos) accept Entra ID only and won't work
+   with this project's API-key auth.
 3. Terraform installed and available on `PATH`.
 4. An Azure sandbox subscription.
 5. An Azure service principal scoped with least privilege to that sandbox.
@@ -60,15 +69,23 @@ packages, then run the tests.
 ```bash
 cd terraform-coder-agent
 cp .env.example .env
-# Edit .env with your GitHub and Azure values.
+# Edit .env with your Foundry model and Azure values.
 uv sync --all-groups
 uv run tfagent --check
 uv run tfagent
 ```
 
-The default model is `openai/gpt-4.1` at
-`https://models.github.ai/inference`. Change `GITHUB_MODEL` in `.env` to use a
-different tool-capable model available to your account.
+`TFAGENT_MODEL_PROVIDER` selects the model family:
+
+- `azure_openai` (default) — set `AZURE_OPENAI_ENDPOINT`,
+  `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT` (the deployment name,
+  e.g. `gpt-4.1`), and optionally `AZURE_OPENAI_API_VERSION`.
+- `foundry_claude` — set `ANTHROPIC_FOUNDRY_RESOURCE` (the subdomain before
+  `.services.ai.azure.com`), `ANTHROPIC_FOUNDRY_API_KEY`, and optionally
+  `ANTHROPIC_CHAT_MODEL` (default `claude-sonnet-4-5`).
+
+Either way, pick a tool-capable model — the agent is built entirely around
+function calling.
 
 ## Expected workflow
 
@@ -163,8 +180,8 @@ hardening work.
 uv run pytest -q
 ```
 
-The test suite does not call GitHub Models, Terraform, or Azure. A real-provider
-smoke test requires your token; a real Terraform test requires Terraform and
+The test suite does not call any model endpoint, Terraform, or Azure. A real-provider
+smoke test requires your Foundry API key; a real Terraform test requires Terraform and
 Azure credentials. No test automatically runs `apply`.
 
 ## Microsoft console provenance

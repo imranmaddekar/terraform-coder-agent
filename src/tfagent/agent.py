@@ -1,9 +1,11 @@
-"""Build the MAF harness using GitHub Models and scoped Terraform tools."""
+"""Build the MAF harness on an Azure AI Foundry-hosted model (GPT via Azure
+OpenAI, or Claude via Foundry's Anthropic endpoint) with scoped Terraform
+tools."""
 from __future__ import annotations
 
 from pathlib import Path
 
-from .config import Settings
+from .config import AZURE_OPENAI, Settings
 from .flow import FlowState, build_flow_tools
 from .instructions import SYSTEM_INSTRUCTIONS
 from .runner import DESTROY_PLAN_FILENAME, TerraformRunner
@@ -26,6 +28,35 @@ def _load_conventions(workspace: Path) -> str:
         if candidate.exists():
             return candidate.read_text(encoding="utf-8")
     return ""
+
+
+def _build_chat_client(settings: Settings):
+    """Construct the MAF chat client for the configured Foundry provider.
+
+    Both branches authenticate with an API key (no Entra/azure-identity):
+    - azure_openai: the unified OpenAIChatCompletionClient routes to Azure
+      when given azure_endpoint/api_version; model is the DEPLOYMENT name.
+    - foundry_claude: Claude in Foundry speaks the Anthropic Messages API on
+      the resource's /anthropic endpoint, not the OpenAI protocol, so it
+      needs the dedicated AnthropicFoundryClient.
+    """
+    if settings.model_provider == AZURE_OPENAI:
+        from agent_framework.openai import OpenAIChatCompletionClient
+
+        return OpenAIChatCompletionClient(
+            model=settings.azure_openai_deployment,
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key,
+            api_version=settings.azure_openai_api_version,
+        )
+
+    from agent_framework.anthropic import AnthropicFoundryClient
+
+    return AnthropicFoundryClient(
+        model=settings.anthropic_model,
+        resource=settings.anthropic_foundry_resource,
+        api_key=settings.anthropic_foundry_api_key,
+    )
 
 
 def build_agent(settings: Settings) -> tuple:
@@ -68,14 +99,7 @@ def build_agent(settings: Settings) -> tuple:
     if conventions:
         agent_instructions += "\n\n## Organization conventions\n\n" + conventions
 
-    # GitHub Models implements the OpenAI chat-completions protocol.
-    from agent_framework.openai import OpenAIChatCompletionClient
-
-    client = OpenAIChatCompletionClient(
-        model=settings.github_model,
-        api_key=settings.github_token,
-        base_url=settings.github_endpoint,
-    )
+    client = _build_chat_client(settings)
 
     # --- Harness agent ---
     # todos_remaining() re-invokes the agent while its todo list has open items;
