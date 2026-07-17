@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .config import AZURE_OPENAI, Settings
+from .config import AZURE_OPENAI, GITHUB_MODELS, Settings
 from .flow import FlowState, build_flow_tools
 from .instructions import SYSTEM_INSTRUCTIONS
 from .runner import DESTROY_PLAN_FILENAME, TerraformRunner
@@ -40,11 +40,14 @@ def _build_skills_provider():
 
 
 def _build_chat_client(settings: Settings):
-    """Construct the MAF chat client for the configured Foundry provider.
+    """Construct the MAF chat client for the configured provider.
 
-    Both branches authenticate with an API key (no Entra/azure-identity):
+    All branches authenticate with an API key (no Entra/azure-identity):
     - azure_openai: the unified OpenAIChatCompletionClient routes to Azure
       when given azure_endpoint/api_version; model is the DEPLOYMENT name.
+    - github_models: free, rate-limited endpoint that speaks the same OpenAI
+      chat-completions protocol, just with a different base_url and a
+      GitHub token instead of an Azure key.
     - foundry_claude: Claude in Foundry speaks the Anthropic Messages API on
       the resource's /anthropic endpoint, not the OpenAI protocol, so it
       needs the dedicated AnthropicFoundryClient.
@@ -57,6 +60,15 @@ def _build_chat_client(settings: Settings):
             azure_endpoint=settings.azure_openai_endpoint,
             api_key=settings.azure_openai_api_key,
             api_version=settings.azure_openai_api_version,
+        )
+
+    if settings.model_provider == GITHUB_MODELS:
+        from agent_framework.openai import OpenAIChatCompletionClient
+
+        return OpenAIChatCompletionClient(
+            model=settings.github_model,
+            api_key=settings.github_token,
+            base_url=settings.github_endpoint,
         )
 
     from agent_framework.anthropic import AnthropicFoundryClient

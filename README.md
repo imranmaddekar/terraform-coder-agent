@@ -70,15 +70,20 @@ packages, then run the tests.
 
 ## Prerequisites
 
-1. An Azure AI Foundry project (or Azure OpenAI resource) with a deployed
-   model: either a GPT deployment, or an Anthropic Claude model deployed in
-   Foundry.
-2. The deployment's endpoint and API key. Claude models use the resource's
-   `/anthropic` Messages endpoint (not the OpenAI-compatible one); note that
-   a few Claude models (e.g. Mythos) accept Entra ID only and won't work
-   with this project's API-key auth.
+1. A model to talk to: either an Azure AI Foundry project / Azure OpenAI
+   resource with a deployed GPT or Claude model, **or**, at no cost, a
+   [GitHub Models](https://github.com/marketplace/models) personal access
+   token (see `github_models` below) — the whole harness is proven to run
+   on it, and it's the easiest way to try this project without an Azure
+   subscription.
+2. If using Azure: the deployment's endpoint and API key. Claude models use
+   the resource's `/anthropic` Messages endpoint (not the OpenAI-compatible
+   one); note that a few Claude models (e.g. Mythos) accept Entra ID only
+   and won't work with this project's API-key auth.
 3. Terraform installed and available on `PATH`.
-4. An Azure sandbox subscription.
+4. An Azure sandbox subscription (only needed once you actually run
+   `tf_init`/`tf_plan`/`tf_apply` against Azure — not required just to try
+   the plan-mode conversation with a free model provider).
 5. An Azure service principal scoped with least privilege to that sandbox.
 
 ## Setup
@@ -100,6 +105,14 @@ uv run tfagent
 - `foundry_claude` — set `ANTHROPIC_FOUNDRY_RESOURCE` (the subdomain before
   `.services.ai.azure.com`), `ANTHROPIC_FOUNDRY_API_KEY`, and optionally
   `ANTHROPIC_CHAT_MODEL` (default `claude-sonnet-4-5`).
+- `github_models` — **free**, no Azure subscription needed. Set `GITHUB_TOKEN`
+  to a personal access token (Settings -> Developer settings -> Personal
+  access tokens; no scopes required). Optionally override `GITHUB_MODEL`
+  (default `openai/gpt-4.1`) and `GITHUB_MODELS_ENDPOINT` (default
+  `https://models.github.ai/inference`). This is the original provider this
+  project shipped with, so it's fully proven against this harness — the
+  trade-off is a rate-limited free tier, so expect occasional 429s on a long
+  session rather than a fast, unlimited API.
 
 Either way, pick a tool-capable model — the agent is built entirely around
 function calling.
