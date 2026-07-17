@@ -12,7 +12,8 @@ load_dotenv()
 # Model providers (Microsoft Agent Framework chat clients, API-key auth).
 AZURE_OPENAI = "azure_openai"      # Azure OpenAI / Foundry-hosted GPT deployment
 FOUNDRY_CLAUDE = "foundry_claude"  # Anthropic Claude deployed in Azure AI Foundry
-MODEL_PROVIDERS = (AZURE_OPENAI, FOUNDRY_CLAUDE)
+GITHUB_MODELS = "github_models"    # Free, rate-limited OpenAI-compatible endpoint
+MODEL_PROVIDERS = (AZURE_OPENAI, FOUNDRY_CLAUDE, GITHUB_MODELS)
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,11 @@ class Settings:
     anthropic_foundry_api_key: str
     anthropic_model: str
 
+    # GitHub Models (model_provider=github_models) - free, rate-limited
+    github_token: str
+    github_model: str
+    github_endpoint: str
+
     # Runtime
     workspace: Path
     max_iterations: int
@@ -45,12 +51,16 @@ class Settings:
         """Human-readable 'what model am I talking to' string."""
         if self.model_provider == AZURE_OPENAI:
             return f"{self.azure_openai_deployment or '(no deployment set)'} (Azure OpenAI)"
+        if self.model_provider == GITHUB_MODELS:
+            return f"{self.github_model} (GitHub Models)"
         return f"{self.anthropic_model} (Claude on Foundry)"
 
     @property
     def model_endpoint_label(self) -> str:
         if self.model_provider == AZURE_OPENAI:
             return self.azure_openai_endpoint
+        if self.model_provider == GITHUB_MODELS:
+            return self.github_endpoint
         if not self.anthropic_foundry_resource:
             return ""
         return f"https://{self.anthropic_foundry_resource}.services.ai.azure.com/anthropic"
@@ -68,6 +78,9 @@ class Settings:
                 "AZURE_OPENAI_API_KEY": self.azure_openai_api_key,
                 "AZURE_OPENAI_DEPLOYMENT": self.azure_openai_deployment,
             }
+        if self.model_provider == GITHUB_MODELS:
+            # model/endpoint have working defaults; only the token is required.
+            return {"GITHUB_TOKEN": self.github_token}
         return {
             "ANTHROPIC_FOUNDRY_RESOURCE": self.anthropic_foundry_resource,
             "ANTHROPIC_FOUNDRY_API_KEY": self.anthropic_foundry_api_key,
@@ -93,6 +106,9 @@ class Settings:
             anthropic_foundry_resource=os.getenv("ANTHROPIC_FOUNDRY_RESOURCE", ""),
             anthropic_foundry_api_key=os.getenv("ANTHROPIC_FOUNDRY_API_KEY", ""),
             anthropic_model=os.getenv("ANTHROPIC_CHAT_MODEL", "claude-sonnet-4-5"),
+            github_token=os.getenv("GITHUB_TOKEN", ""),
+            github_model=os.getenv("GITHUB_MODEL", "openai/gpt-4.1"),
+            github_endpoint=os.getenv("GITHUB_MODELS_ENDPOINT", "https://models.github.ai/inference"),
             workspace=workspace,
             # The canonical workflow (instructions.py) is fmt/init/validate/plan/
             # apply per todo, plus a re-plan/re-apply cycle on any validate or

@@ -23,6 +23,9 @@ def settings(tmp_path: Path, provider: str = "azure_openai") -> Settings:
         anthropic_foundry_resource="unit-test-foundry",
         anthropic_foundry_api_key="test-claude-key",
         anthropic_model="claude-sonnet-4-5",
+        github_token="test-github-token",
+        github_model="openai/gpt-4.1",
+        github_endpoint="https://models.github.ai/inference",
         workspace=tmp_path,
         max_iterations=5,
         tf_timeout_seconds=30,
@@ -85,6 +88,10 @@ def test_chat_client_factory_picks_the_configured_provider(tmp_path: Path) -> No
     assert isinstance(
         _build_chat_client(settings(tmp_path, provider="foundry_claude")),
         AnthropicFoundryClient,
+    )
+    assert isinstance(
+        _build_chat_client(settings(tmp_path, provider="github_models")),
+        OpenAIChatCompletionClient,
     )
 
 
